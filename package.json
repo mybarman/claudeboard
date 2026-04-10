@@ -1,9 +1,9 @@
 {
-	"name": "claudeboard",
-	"displayName": "Claudeboard",
+	"name": "claudeboard-fork",
+	"displayName": "Claudeboard Fork",
 	"description": "Share images with Claude Code running on a remote server via Remote-SSH",
-	"version": "1.0.1",
-	"publisher": "dkodr",
+	"version": "1.0.2",
+	"publisher": "mybarman",
 	"author": "Dariusz Kuśnierek",
 	"license": "MIT",
 	"icon": "icon.png",
@@ -13,12 +13,12 @@
 	},
 	"repository": {
 		"type": "git",
-		"url": "https://github.com/dkodr/claudeboard"
+		"url": "https://github.com/mybarman/claudeboard"
 	},
 	"bugs": {
-		"url": "https://github.com/dkodr/claudeboard/issues"
+		"url": "https://github.com/mybarman/claudeboard/issues"
 	},
-	"homepage": "https://github.com/dkodr/claudeboard#readme",
+	"homepage": "https://github.com/mybarman/claudeboard#readme",
 	"engines": {
 		"vscode": "^1.74.0"
 	},
