@@ -18,6 +18,41 @@ export interface CommandDependencies {
     config: ConfigurationService;
 }
 
+function delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function asBracketedPaste(text: string): string {
+    return `\x1b[200~${text}\x1b[201~`;
+}
+
+async function pasteTextIntoActiveTerminal(text: string): Promise<ExtensionResult<void>> {
+    const activeTerminal = vscode.window.activeTerminal;
+    if (!activeTerminal) {
+        return failure(new FileSystemError('No active terminal available'));
+    }
+
+    try {
+        activeTerminal.show(false);
+        await vscode.commands.executeCommand('workbench.action.terminal.focus');
+        await delay(100);
+        await vscode.env.clipboard.writeText(text);
+        await vscode.commands.executeCommand('workbench.action.terminal.paste');
+        return success(undefined);
+    } catch (pasteCommandError) {
+        try {
+            activeTerminal.sendText(asBracketedPaste(text), false);
+            return success(undefined);
+        } catch (bracketedPasteError) {
+            await vscode.env.clipboard.writeText(text);
+            return failure(new FileSystemError(
+                'Failed to insert image URL into terminal. The path was copied to the clipboard; press Cmd+V/Ctrl+V in the terminal.',
+                { pasteCommandError, bracketedPasteError, text }
+            ));
+        }
+    }
+}
+
 class ImageUploadCommand implements UploadImageCommand {
     constructor(private readonly deps: CommandDependencies) {}
 
@@ -134,12 +169,7 @@ class ImageUploadCommand implements UploadImageCommand {
                     editBuilder.insert(position, url);
                 });
             } else if (destination === 'terminal') {
-                const activeTerminal = vscode.window.activeTerminal;
-                if (!activeTerminal) {
-                    return failure(new FileSystemError('No active terminal available'));
-                }
-
-                activeTerminal.sendText(url, false);
+                return await pasteTextIntoActiveTerminal(url);
             }
 
             return success(undefined);
@@ -272,12 +302,7 @@ class OptimizedImageUploadCommand implements UploadImageCommand {
                     editBuilder.insert(position, url);
                 });
             } else if (destination === 'terminal') {
-                const activeTerminal = vscode.window.activeTerminal;
-                if (!activeTerminal) {
-                    return failure(new FileSystemError('No active terminal available'));
-                }
-
-                activeTerminal.sendText(url, false);
+                return await pasteTextIntoActiveTerminal(url);
             }
 
             return success(undefined);
@@ -305,5 +330,6 @@ export async function handleUploadCommand(
 
     if (Result.isFailure(result)) {
         vscode.window.showErrorMessage(`Upload error: ${result.error.message}`);
+        return;
     }
 }
