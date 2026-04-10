@@ -1,8 +1,8 @@
 {
 	"name": "claudeboard",
-	"displayName": "Claudeboard",
+	"displayName": "Claudeboard Local",
 	"description": "Share images with Claude Code running on a remote server via Remote-SSH",
-	"version": "1.0.1",
+	"version": "1.0.5",
 	"publisher": "dkodr",
 	"author": "Dariusz Kuśnierek",
 	"license": "MIT",

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { exec } from 'child_process';
+import { Logger } from './logging';
 
 export interface ImageData {
     buffer: Buffer;
@@ -45,18 +46,22 @@ class ManagedTempFile implements Disposable {
 
 class WindowsClipboardService implements ClipboardService {
     private readonly timeout = 10000;
+    constructor(private readonly logger: Logger) {}
 
     async getImage(): Promise<ClipboardResult> {
+        this.logger.debug('Windows clipboard getImage start');
         const tempFile = this.createTempFile();
         
         try {
             const hasImage = await this.executeClipboardCommand(tempFile.getPath());
             
             if (!hasImage || !fs.existsSync(tempFile.getPath())) {
+                this.logger.info('Windows clipboard does not contain an image');
                 return null;
             }
 
             const buffer = fs.readFileSync(tempFile.getPath());
+            this.logger.info('Windows clipboard image extracted', { bytes: buffer.length });
             return {
                 buffer,
                 format: 'png'
@@ -131,7 +136,10 @@ class WindowsClipboardService implements ClipboardService {
 }
 
 class LinuxClipboardService implements ClipboardService {
+    constructor(private readonly logger: Logger) {}
+
     async getImage(): Promise<ClipboardResult> {
+        this.logger.debug('Linux clipboard getImage start');
         // Try xclip first (X11), then wl-clipboard (Wayland)
         const commands = [
             'xclip -selection clipboard -t image/png -o',
@@ -142,17 +150,23 @@ class LinuxClipboardService implements ClipboardService {
             try {
                 const buffer = await this.executeCommand(command);
                 if (buffer && buffer.length > 0) {
+                    this.logger.info('Linux clipboard strategy succeeded', {
+                        command,
+                        bytes: buffer.length
+                    });
                     return {
                         buffer,
                         format: 'png'
                     };
                 }
             } catch (error) {
+                this.logger.debug('Linux clipboard strategy failed', { command, error });
                 // Try next command
                 continue;
             }
         }
 
+        this.logger.info('Linux clipboard did not yield an image');
         return null;
     }
 
@@ -223,15 +237,22 @@ class LinuxClipboardService implements ClipboardService {
 
 class MacOSClipboardService implements ClipboardService {
     private readonly timeout = 10000;
+    constructor(private readonly logger: Logger) {}
 
     async getImage(): Promise<ClipboardResult> {
+        this.logger.debug('macOS clipboard getImage start');
         // Strategy 1: AppleScript for PNG with auto-conversion
         try {
             const buffer = await this.getImageViaAppleScript();
             if (buffer && buffer.length > 0) {
+                this.logger.info('macOS clipboard strategy succeeded', {
+                    strategy: 'applescript',
+                    bytes: buffer.length
+                });
                 return { buffer, format: 'png' };
             }
         } catch (error) {
+            this.logger.warn('macOS AppleScript clipboard strategy failed', { error });
             // AppleScript failed, try pbpaste fallback
         }
 
@@ -246,13 +267,26 @@ class MacOSClipboardService implements ClipboardService {
             try {
                 const buffer = await this.getImageViaPbpaste(uti);
                 if (buffer && buffer.length > 0) {
+                    this.logger.info('macOS clipboard strategy succeeded', {
+                        strategy: 'pbpaste',
+                        uti,
+                        format,
+                        bytes: buffer.length
+                    });
                     return { buffer, format };
                 }
             } catch (error) {
+                this.logger.debug('macOS pbpaste clipboard strategy failed', {
+                    uti,
+                    format,
+                    error
+                });
                 // Try next format
             }
         }
 
+        const clipboardInfo = await this.getClipboardInfoForDebug();
+        this.logger.warn('macOS clipboard did not yield an image', { clipboardInfo });
         return null;
     }
 
@@ -271,16 +305,21 @@ class MacOSClipboardService implements ClipboardService {
             `;
             
             const result = await this.executeAppleScript(script);
-            return result.toString().trim() === 'true';
+            const hasImage = result.toString().trim() === 'true';
+            this.logger.debug('macOS hasImage via AppleScript', { hasImage });
+            return hasImage;
         } catch (error) {
+            this.logger.debug('macOS hasImage AppleScript failed', { error });
             // Fallback: try to get clipboard info
             try {
                 const output = await this.executeCommand('osascript -e "clipboard info"');
                 const info = output.toString();
-                return info.includes('image') || 
+                const hasImage = info.includes('image') || 
                        info.includes('PNGf') || 
                        info.includes('TIFF') || 
                        info.includes('JPEG');
+                this.logger.debug('macOS hasImage via clipboard info', { hasImage, info });
+                return hasImage;
             } catch {
                 return false;
             }
@@ -299,6 +338,7 @@ class MacOSClipboardService implements ClipboardService {
         try {
             // Pre-check clipboard access
             await this.executeCommand('osascript -e "clipboard info"');
+            this.logger.debug('macOS clipboard warmUp succeeded');
         } catch {
             // Best effort
         }
@@ -358,6 +398,16 @@ class MacOSClipboardService implements ClipboardService {
         return await this.executeCommand(`pbpaste -Prefer ${uti}`, true);
     }
 
+    private async getClipboardInfoForDebug(): Promise<string | null> {
+        try {
+            const output = await this.executeCommand('osascript -e "clipboard info"');
+            return output.toString().trim();
+        } catch (error) {
+            this.logger.debug('macOS clipboard info lookup failed', { error });
+            return null;
+        }
+    }
+
     private async executeAppleScript(script: string): Promise<Buffer> {
         return new Promise((resolve, reject) => {
             const child = exec(`osascript -e '${script.replace(/'/g, "'\"'\"'")}'`, {
@@ -391,14 +441,14 @@ class MacOSClipboardService implements ClipboardService {
 
 }
 
-export function createClipboardService(): ClipboardService {
+export function createClipboardService(logger: Logger): ClipboardService {
     switch (process.platform) {
         case 'win32':
-            return new WindowsClipboardService();
+            return new WindowsClipboardService(logger);
         case 'linux':
-            return new LinuxClipboardService();
+            return new LinuxClipboardService(logger);
         case 'darwin':
-            return new MacOSClipboardService();
+            return new MacOSClipboardService(logger);
         default:
             throw new Error(`Unsupported platform: ${process.platform}`);
     }

@@ -3,12 +3,14 @@ import { createClipboardService } from './services/clipboard';
 import { createFileManager } from './services/fileManager';
 import { createProgressService } from './services/progress';
 import { createConfigurationService } from './services/configuration';
+import { createLogger } from './services/logging';
 import { handleUploadCommand, CommandDependencies, InsertDestination } from './commands/uploadImage';
 
 // Main extension entry point
 export function activate(context: vscode.ExtensionContext): void {
     // Initialize services
-    const clipboard = createClipboardService();
+    const logger = createLogger();
+    const clipboard = createClipboardService(logger);
     const fileManager = createFileManager();
     const progress = createProgressService();
     const config = createConfigurationService();
@@ -17,7 +19,8 @@ export function activate(context: vscode.ExtensionContext): void {
         clipboard,
         fileManager,
         progress,
-        config
+        config,
+        logger
     };
 
     // Register commands
@@ -40,7 +43,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // Register configuration change handler
     const configDisposable = config.onConfigurationChanged((newConfig) => {
-        console.log('Extension configuration updated:', newConfig);
+        logger.info('Extension configuration updated', { newConfig });
         // Here you could update services that depend on configuration
     });
 
@@ -52,7 +55,11 @@ export function activate(context: vscode.ExtensionContext): void {
         // Silently fail - warming up is best effort
     });
 
-    console.log('Claudeboard extension activated');
+    logger.info('Claudeboard extension activated', {
+        extensionVersion: context.extension.packageJSON.version,
+        processPlatform: process.platform,
+        remoteName: vscode.env.remoteName
+    });
 }
 
 export function deactivate(): void {
